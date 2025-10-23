@@ -1,95 +1,77 @@
 import cv2
 import mediapipe as mp
+import numpy as np
 
-# --- Inicialização dos objetos do MediaPipe ---
-
-# Inicializa a solução de detecção de pose (BlazePose)
+mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
-# Inicializa a ferramenta para desenhar os pontos e conexões no corpo
-mp_drawing = mp.solutions.drawing_utils
+#Camera feed
+webcam = cv2.VideoCapture(0)
+with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+    while webcam.isOpened():
+        ret, frame = webcam.read()
 
-# Configura o detector de pose
-# - static_image_mode=False: Para processar vídeo em tempo real.
-# - model_complexity=1: Complexidade do modelo (0, 1 ou 2). 1 é um bom equilíbrio.
-# - enable_segmentation=False: Não precisamos da máscara de segmentação do corpo.
-# - min_detection_confidence=0.5: Confiança mínima para a detecção ser considerada válida.
-pose = mp_pose.Pose(
-    static_image_mode=False,
-    model_complexity=1,
-    enable_segmentation=False,
-    min_detection_confidence=0.5)
+        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image.flags.writeable = False
 
-# --- Processamento do Vídeo ---
+        results = pose.process(image)
 
-# Inicia a captura de vídeo da webcam (0 é geralmente a webcam padrão)
-cap = cv2.VideoCapture(0)
+        image.flags.writeable = True
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-# Flag para garantir que os pontos 3D sejam impressos apenas uma vez
-landmarks_printed = False
+        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
-print("Pressione 'q' para sair.")
 
-while cap.isOpened():
-    # Lê um frame da webcam
-    success, image = cap.read()
-    if not success:
-        print("Ignorando frame vazio da câmera.")
-        continue
+        def calcular_angulo(a, b, c):
+            a = np.array(a)
+            b = np.array(b)
+            c = np.array(c)
 
-    # Para melhorar o desempenho, marcamos a imagem como não-gravável
-    image.flags.writeable = False
+            radiante = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
+            angulo = np.abs(radiante*180/np.pi)
+            if angulo > 180:
+                angulo = angulo - 360
+            return angulo
 
-    # O MediaPipe espera imagens em RGB, mas o OpenCV lê em BGR. Convertemos.
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    # Processa a imagem e detecta a pose
-    results = pose.process(image_rgb)
+        # extrair landmarks
+        try:
+            landmarks = results.pose_landmarks.landmark
 
-    # Desmarca a imagem como não-gravável para poder desenhar nela
-    image.flags.writeable = True
+            # Get coordinates
+            shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                        landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+            elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
+                     landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+            wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
+                     landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
 
-    # Converte a imagem de volta para BGR para exibição com o OpenCV
-    image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+            angulo = calcular_angulo(shoulder, elbow, wrist)
 
-    # --- Extração e Impressão dos Pontos 3D ---
+            cv2.putText(image, str(angulo),
+                        tuple(np.multiply(elbow, [640, 480]).astype(int)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2, cv2.LINE_AA
+                        )
 
-    # Verifica se os pontos 3D ("world landmarks") foram detectados
-    if results.pose_world_landmarks and not landmarks_printed:
-        print("--- Pontos do Corpo em Coordenadas 3D (em metros) ---")
-        # Itera sobre cada ponto detectado
-        for id, lm in enumerate(results.pose_world_landmarks.landmark):
-            # Imprime o ID do ponto e suas coordenadas x, y, z
-            print(f"Ponto ID {id} ({mp_pose.PoseLandmark(id).name}):")
-            print(f"  x: {lm.x:.4f} m")
-            print(f"  y: {lm.y:.4f} m")
-            print(f"  z: {lm.z:.4f} m")
-            # A visibilidade indica a probabilidade do ponto estar visível e não oculto
-            print(f"  Visibilidade: {lm.visibility:.4f}")
+            if angulo > 40:
+                msg = "vtnc nana"
+                cor = (0, 0, 255)
+            else:
+                msg = "casa cmg damiao"
+                cor = (0, 255, 0)
 
-        print("-" * 30)
-        # Marcamos como impresso para não inundar o console.
-        # Remova a linha abaixo se quiser impressão contínua.
-        landmarks_printed = True
+            cv2.putText(image, msg,
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, cor, 2, cv2.LINE_AA)
+        except: pass
 
-    # --- Desenho dos Pontos 2D na Tela ---
 
-    # Desenha o esqueleto da pose (os pontos 2D) na imagem
-    mp_drawing.draw_landmarks(
-        image,
-        results.pose_landmarks,
-        mp_pose.POSE_CONNECTIONS,
-        landmark_drawing_spec=mp_drawing.DrawingSpec(color=(245, 117, 66), thickness=2, circle_radius=2),
-        connection_drawing_spec=mp_drawing.DrawingSpec(color=(245, 66, 230), thickness=2, circle_radius=2))
 
-    # Mostra a imagem resultante em uma janela
-    cv2.imshow('ugabuga ugabuga', image)
+        cv2.imshow("ugabuga", image)
+        if cv2.waitKey(5) & 0xFF == ord("q"):
+            break
 
-    # Interrompe o loop se a tecla 'q' for pressionada
-    if cv2.waitKey(5) & 0xFF == ord('q'):
-        break
 
-# --- Liberação dos Recursos ---
-pose.close()
-cap.release()
-cv2.destroyAllWindows()
+
+    webcam.release()
+    cv2.destroyAllWindows()
+
