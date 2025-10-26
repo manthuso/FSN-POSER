@@ -54,10 +54,10 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                         )
 
             if angulo > 40:
-                msg = "vtnc nana"
+                msg = "contracao de menos 40"
                 cor = (0, 0, 255)
             else:
-                msg = "casa cmg damiao"
+                msg = "contracao de mais 40"
                 cor = (0, 255, 0)
 
             cv2.putText(image, msg,
